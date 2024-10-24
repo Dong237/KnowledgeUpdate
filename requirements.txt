@@ -1,4 +1,4 @@
-transformers>4.37.0,<4.38.0
+transformers
 accelerate
 tiktoken
 einops
@@ -6,3 +6,6 @@ transformers_stream_generator==0.0.4
 scipy
 deepspeed
 peft<0.8.0
+auto-gptq
+optimum
+langchain_text_splitters
