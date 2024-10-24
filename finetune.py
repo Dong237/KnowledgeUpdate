@@ -23,7 +23,7 @@ IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
 @dataclass
 class ModelArguments:
-    model_name_or_path: Optional[str] = field(default="Qwen/Qwen-7B")
+    model_name_or_path: Optional[str] = field(default="Qwen2.5-1.5B-Instruct-GPTQ-Int8")
 
 
 @dataclass
@@ -56,7 +56,7 @@ class LoraArguments:
     lora_alpha: int = 16
     lora_dropout: float = 0.05
     lora_target_modules: List[str] = field(
-        default_factory=lambda: ["c_attn", "c_proj", "w1", "w2"]
+        default_factory=lambda: ["q_proj","v_proj"] # ["c_attn", "c_proj", "w1", "w2"]
     )
     lora_weight_path: str = ""
     lora_bias: str = "none"
@@ -130,8 +130,8 @@ def preprocess(
 ) -> Dict:
     roles = {"user": "<|im_start|>user", "assistant": "<|im_start|>assistant"}
 
-    im_start = tokenizer.im_start_id
-    im_end = tokenizer.im_end_id
+    im_start = tokenizer.convert_tokens_to_ids('<|im_start|>')
+    im_end = tokenizer.convert_tokens_to_ids('<|im_end|>')
     nl_tokens = tokenizer('\n').input_ids
     _system = tokenizer('system').input_ids + nl_tokens
     _user = tokenizer('user').input_ids + nl_tokens
@@ -144,24 +144,30 @@ def preprocess(
             source = source[1:]
 
         input_id, target = [], []
+        # creating input and target ids for system message
         system = [im_start] + _system + tokenizer(system_message).input_ids + [im_end] + nl_tokens
         input_id += system
         target += [im_start] + [IGNORE_TOKEN_ID] * (len(system)-3) + [im_end] + nl_tokens
         assert len(input_id) == len(target)
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
+            # creating input ids for user and assistant
             _input_id = tokenizer(role).input_ids + nl_tokens + \
                 tokenizer(sentence["value"]).input_ids + [im_end] + nl_tokens
             input_id += _input_id
             if role == '<|im_start|>user':
+                # for user data, ids in between the role and user utterance will be ignored
                 _target = [im_start] + [IGNORE_TOKEN_ID] * (len(_input_id)-3) + [im_end] + nl_tokens
             elif role == '<|im_start|>assistant':
+                # for assistant data, only the role will be ignored, the utterance is the same as input ids
                 _target = [im_start] + [IGNORE_TOKEN_ID] * len(tokenizer(role).input_ids) + \
                     _input_id[len(tokenizer(role).input_ids)+1:-2] + [im_end] + nl_tokens
             else:
                 raise NotImplementedError
             target += _target
         assert len(input_id) == len(target)
+        # right side padding
+        # TODO this way of building the training data does not take truncation into consideration
         input_id += [tokenizer.pad_token_id] * (max_len - len(input_id))
         target += [IGNORE_TOKEN_ID] * (max_len - len(target))
         input_ids.append(input_id[:max_len])
@@ -177,7 +183,8 @@ def preprocess(
 
 
 class SupervisedDataset(Dataset):
-    """Dataset for supervised fine-tuning."""
+    """SupervisedDataset precomputes everything upfront, 
+    leading to faster data access but higher memory usage."""
 
     def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, max_len: int):
         super(SupervisedDataset, self).__init__()
@@ -202,7 +209,9 @@ class SupervisedDataset(Dataset):
 
 
 class LazySupervisedDataset(Dataset):
-    """Dataset for supervised fine-tuning."""
+    """LazySupervisedDataset processes data on demand, using less memory 
+    initially but potentially slowing down the first access to each example 
+    due to on-the-fly processing."""
 
     def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, max_len: int):
         super(LazySupervisedDataset, self).__init__()
@@ -266,7 +275,7 @@ def train():
         lora_args,
     ) = parser.parse_args_into_dataclasses()
 
-    # This serves for single-gpu qlora.
+    # TODO To understand this (This serves for single-gpu qlora?)
     if getattr(training_args, 'deepspeed', None) and int(os.environ.get("WORLD_SIZE", 1))==1:
         training_args.distributed_state.distributed_type = DistributedType.DEEPSPEED
 
@@ -336,10 +345,12 @@ def train():
         # because the base language model has no knowledge of special tokens brought 
         # by ChatML format. Thus these layers should be updated for the model to understand 
         # and predict the tokens. 
+
         if lora_args.q_lora or is_chat_model:
             modules_to_save = None
         else:
             modules_to_save = ["wte", "lm_head"]
+
         lora_config = LoraConfig(
             r=lora_args.lora_r,
             lora_alpha=lora_args.lora_alpha,
@@ -362,7 +373,9 @@ def train():
         # However, if the preferred batch size fits into memory, there’s no reason 
         # to apply memory-optimizing techniques because they can slow down the training
         if training_args.gradient_checkpointing:
-            model.enable_input_require_grads()
+            # Enables the gradients for the input embeddings. This is useful for fine-tuning 
+            # adapter weights while keeping the model weights fixed.
+            model.enable_input_require_grads()  
 
     # Load data
     data_module = make_supervised_data_module(

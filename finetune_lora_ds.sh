@@ -23,11 +23,10 @@ MASTER_ADDR=${MASTER_ADDR:-localhost}
 # The port for communication
 MASTER_PORT=${MASTER_PORT:-6001}
 
-MODEL="Qwen/Qwen-7B" # Set the path if you do not want to load from huggingface directly
-# ATTENTION: specify the path to your training data, which should be a json file consisting of a list of conversations.
-# See the section for finetuning in README for more information.
-DATA="path_to_data"
-DS_CONFIG_PATH="finetune/ds_config_zero2.json"
+#  # Set the path if you do not want to load from huggingface directly
+MODEL="/data/repos/huggingface/Qwen2.5-1.5B-Instruct-GPTQ-Int8" # "/data/repos/huggingface/gpt2" 
+DATA="/data/repos/KnowledgeUpdate/datasets/sample.json"
+DS_CONFIG_PATH="ds_config_zero2.json"
 
 function usage() {
     echo '
