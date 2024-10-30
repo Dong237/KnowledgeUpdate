@@ -1,15 +1,43 @@
+#!/usr/bin/env python
+
+"""
+data_collection.py
+
+This script performs data collection and processing tasks by automatically looping through
+all existing .txt files in a folder and generating Q&A pairs based on the documents. 
+
+Methods are inspired by following works: 
+    [Injecting New Knowledge into Large Language Models via Supervised Fine-Tuning](https://arxiv.org/abs/2404.00213)
+    [Assisting in Writing Wikipedia-like Articles From Scratch with Large Language Models](https://arxiv.org/abs/2402.14207)
+
+Usage:
+    python data_collection.py --data_path <data_path> --model_name_or_path <model_path>
+                              --chunk_size_by_token <chunk_size> --qa_amount_per_fact <amount> 
+                              --role_amount_per_fact <roles> --json_save_dir <output_dir>
+"""
+
+
 import os
 import re
 import sys
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)
+
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(parent_dir)
 
 import warnings
+import logging
 import argparse
 from tqdm import tqdm
 from typing import List
-from utils import read_txt_file, llm_chat, jdump
 from transformers import AutoTokenizer
+
+from utils import (
+    read_txt_file, 
+    llm_chat, 
+    jdump,
+    closest_power_of_2,
+    setup_logging
+)
 from prompts import (
     system_prompt_data_gen,
     system_prompt_eval,
@@ -20,7 +48,7 @@ from prompts import (
     role_based_qa_diversify,
     fact_based_qa_gen_skip,
     answer_accuracy
-    )
+)
 
 
 def parse_args():
@@ -34,16 +62,16 @@ def parse_args():
         help="Path to the directory containing the .txt data files."
     )
     parser.add_argument(
-        "--data_name",
-        type=str,
-        default="data.txt",
-        help="Name of the data file to be processed."
-    )
-    parser.add_argument(
         "--model_name_or_path",
         type=str,
         default="/data/hf_model",
         help="Path to the pre-trained model or model identifier for initializing the tokenizer."
+    )
+    parser.add_argument(
+        "--chunk_size_by_token",
+        type=int,
+        default=512,
+        help="Chunk size measured by tokens, smaller chunk size leads to finer granularity when extracting facts"
     )
     parser.add_argument(
         "--qa_amount_per_fact",
@@ -69,8 +97,8 @@ def parse_args():
 def _chunking_by_token_size(
     content: str, 
     tokenizer: AutoTokenizer,
-    overlap_token_size=128, 
-    max_token_size=1024, 
+    overlap_token_size=64, 
+    max_token_size=512, 
 ):
     tokens = tokenizer.encode(content)
     results = []
@@ -112,26 +140,36 @@ def _parse_numbered_elements(response: str) -> list:
     return re.findall(r'\d+\.\s*(.*?)(?=\n\d+\.|$)', response)
 
 
-def main(
-        data: str, 
+def _generate_qa_pairs_from_one_txt_file(
+        data_path: str, 
+        data_name: str,
         model_name_or_path: str,
         qa_amount_per_fact: int, 
         role_amount_per_fact: int,
-        json_save_dir: str,
-        ) -> List[str]:
+        chunk_size_by_token: int,
+        ) -> List[dict]:
+    
     """
     Generate fact-based Q&A pairs given a text .txt file, and save them according
     to the json format required for fine-tuning the LLM
 
     Args:
         data: The text data in string format.
+
         model_name_or_path: Name of the tokenizer, could be a local dir or hf repo.
+
         qa_amount_per_fact: The numebr of Q&A pairs to be generated for each fact, default \
         is 10 as in Mecklenburg et al, 2024.
+
         role_amount_per_fact: The number of roles to be played by the LLM in order to augment \
         the Q&A pair for a certain fact from multiple perspectives.
+
+        chunk_size_by_token: chunk size for splitting the documents
+
         json_save_dir: Path to save the final json data for finetuning task.
     """
+    logging.info(f"Collectin data from the single txt file: {data_name}")
+    data = read_txt_file(os.path.join(data_path, data_name))
 
     assert qa_amount_per_fact > role_amount_per_fact, "Each role should generate at least one QA pair"
     scheduler = divmod(qa_amount_per_fact, role_amount_per_fact)
@@ -144,23 +182,29 @@ def main(
         trust_remote_code=True,
         )
 
+    # Allow passing self-defined chunk size to control granularity of fact extraction
+    assert chunk_size_by_token < tokenizer.model_max_length, "Chunk size must not exceed tokenizer max length"
+    overlap_token_size = closest_power_of_2(chunk_size_by_token)
     chunking_results = _chunking_by_token_size(
         content=data, 
         tokenizer=tokenizer,
-        max_token_size=tokenizer.model_max_length # TODO maybe I should decrease this number in case LLM gives incomplete amount of facts for one big article
+        overlap_token_size=overlap_token_size,
+        max_token_size=chunk_size_by_token 
         )
 
-
     qa_pairs_all_chunks = []
+    facts = []
     for chunk in tqdm(chunking_results, desc="Processing chunks..."):
-        chunk_tokens = chunk["tokens"]
+        # chunk_tokens = chunk["tokens"]
         content = chunk["content"]
 
         # extracting facts from chunked texts
+        logging.info("Summarizing the theme of the chunk")
         theme_response = llm_chat(
             user_prompt=theme_summarization.format(passage=content), 
             system_prompt=system_prompt_data_gen
             )
+        logging.info("Extracting facts from the chunk")
         facts_response = llm_chat(
             user_prompt=fact_distillation.format(
                 theme=theme_response, 
@@ -170,9 +214,9 @@ def main(
         )
         parsed_facts = _parse_numbered_elements(facts_response)
 
-        qa_pairs_all_facts = []
-        for fact in tqdm(parsed_facts, desc="Processing facts in the chunk..."):
+        for fact in tqdm(parsed_facts, desc="Processing facts in the chunk"):
             # generate a qa pair from the fact as example
+            logging.info("Generating a standard Q&A pair based on the fact")
             qa_response = llm_chat(
                 user_prompt=fact_based_qa_gen_skip.format(
                     theme=theme_response, 
@@ -183,6 +227,7 @@ def main(
             # only proceed when the fact is not too broad
             if qa_response!="SKIP":
                 # generate different roles
+                logging.info("Generating possible roles")
                 roles_response = llm_chat(
                     user_prompt=role_generation.format(
                         amount=role_amount_per_fact,
@@ -192,7 +237,8 @@ def main(
                     )
                 parsed_roles_response = _parse_numbered_elements(roles_response)
 
-                for idx, role in enumerate(parsed_roles_response):    
+                for idx, role in enumerate(parsed_roles_response): 
+                    logging.info("Diversifying the standard Q&A pair given roles")   
                     diversified_qa_response = llm_chat(
                         user_prompt=role_based_qa_diversify.format(
                             role=role,
@@ -204,16 +250,15 @@ def main(
                         system_prompt=system_prompt_data_gen
                     )
                     qa_pairs_per_role = _parse_diversified_qa_response(diversified_qa_response)
-                    qa_pairs_all_facts.extend(qa_pairs_per_role)
+                    facts.extend([fact]*len(qa_pairs_per_role))
+                    qa_pairs_all_chunks.extend(qa_pairs_per_role)
             else:
                 message = f"The fact {fact} is too broad or ambiguous to generate any Q&A pairs. will be skipped"
                 warnings.warn(message)
                 continue
-        qa_pairs_all_chunks.extend(qa_pairs_all_facts)
-    
     
     qa_pairs_json = []
-    for idx, qa in enumerate(qa_pairs_all_chunks):
+    for idx, (qa, fact) in enumerate(zip(qa_pairs_all_chunks, facts)):
         q, a = qa.split('\nA: ')
         q = q.replace('Q: ', '')
         # TODO this json format may probably need adjustment upon delivery
@@ -229,23 +274,51 @@ def main(
                     "from": "assistant",
                     "value": a
                 }
-            ]
+            ],
+            "fact": fact,
+            "file_name": data_name
             }
         )
-    jdump(qa_pairs_json, json_save_dir)
-    return qa_pairs_all_chunks, qa_pairs_json
+    logging.info(f"Processing for the file {data_name} finished")
+    return qa_pairs_json
 
 
+def generate_qa_pairs_from_folder(        
+        data_path: str, 
+        model_name_or_path: str,
+        qa_amount_per_fact: int, 
+        role_amount_per_fact: int,
+        chunk_size_by_token: int,
+        json_save_dir: str,
+        ):
+    files = os.listdir(data_path)
+    json_data_list = []
+    count = 0
+    for file in files:
+        count += 1
+        data_list = _generate_qa_pairs_from_one_txt_file(        
+            data_path, 
+            file,
+            model_name_or_path,
+            qa_amount_per_fact, 
+            role_amount_per_fact,
+            chunk_size_by_token,
+            )
+        json_data_list.extend(data_list)
+        if count >= 2:
+            break
+    jdump(json_data_list, json_save_dir)
+    logging.info(f"Saving final json data to {json_save_dir}")
+
+ 
 if __name__ == "__main__":
+    setup_logging()
     args = parse_args()
-    # generating fact-based qa pair from one single txt file
-    qa_pairs_all_chunks, qa_pairs_json = main(
-        data=read_txt_file(
-            os.path.join(args.data_path, args.data_name)
-            ), 
+    generate_qa_pairs_from_folder(
+        data_path=args.data_path,
         model_name_or_path=args.model_name_or_path,
         qa_amount_per_fact=args.qa_amount_per_fact, 
         role_amount_per_fact=args.role_amount_per_fact,
+        chunk_size_by_token=args.chunk_size_by_token,
         json_save_dir=args.json_save_dir,
         )
-    print(qa_pairs_all_chunks)
