@@ -40,18 +40,16 @@ from utils import (
 )
 from prompts import (
     system_prompt_data_gen,
-    system_prompt_eval,
     system_prompt_role_gen,
     theme_summarization, 
     fact_distillation,
     role_generation,
     role_based_qa_diversify,
     fact_based_qa_gen_skip,
-    answer_accuracy
 )
 
 
-def parse_args():
+def _parse_args():
     parser = argparse.ArgumentParser(
         description="Script for processing text into SFT-ready format"
         )
@@ -71,7 +69,7 @@ def parse_args():
         "--chunk_size_by_token",
         type=int,
         default=512,
-        help="Chunk size measured by tokens, smaller chunk size leads to finer granularity when extracting facts"
+        help="Chunk size measured by tokens, smaller chunk size leads to finer granularity when extracting  (more facts being extracted)"
     )
     parser.add_argument(
         "--qa_amount_per_fact",
@@ -259,7 +257,11 @@ def _generate_qa_pairs_from_one_txt_file(
     
     qa_pairs_json = []
     for idx, (qa, fact) in enumerate(zip(qa_pairs_all_chunks, facts)):
-        q, a = qa.split('\nA: ')
+        try:
+            q, a = qa.split('\nA: ')
+        except ValueError as e:
+            logging.error(f"The following exception occured whiile spltting the Q&A pair")
+            logging.warning(f"Q&A pair {qa} will be omitted in the final dataset due to splitting failure")
         q = q.replace('Q: ', '')
         # TODO this json format may probably need adjustment upon delivery
         qa_pairs_json.append(
@@ -313,7 +315,7 @@ def generate_qa_pairs_from_folder(
  
 if __name__ == "__main__":
     setup_logging()
-    args = parse_args()
+    args = _parse_args()
     generate_qa_pairs_from_folder(
         data_path=args.data_path,
         model_name_or_path=args.model_name_or_path,
