@@ -27,7 +27,6 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Script for processing text into SFT-ready format"
         )
-    
     parser.add_argument(
         "--data_path",
         type=str,
