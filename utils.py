@@ -3,6 +3,9 @@ import os
 import json
 import netrc
 import io
+import math
+import logging
+import colorlog
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -133,3 +136,47 @@ def is_wandb_logged_in():
     
     auth = netrc.netrc(netrc_path).authenticators("api.wandb.ai")
     return bool(auth)
+
+
+def setup_logging():
+    # Define the basic format for log messages
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    
+    # Set up file handler
+    file_handler = logging.FileHandler("app.log")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+
+    # Set up color console handler using colorlog
+    color_handler = colorlog.StreamHandler()
+    color_handler.setFormatter(colorlog.ColoredFormatter(
+        "%(log_color)s%(levelname)s: %(message)s",
+        log_colors={
+            "DEBUG": "blue",
+            "INFO": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "bold_red",
+        }
+    ))
+
+    # Configure the root logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)  # Set the lowest log level to capture all messages
+    logger.addHandler(file_handler)
+    logger.addHandler(color_handler)
+
+
+## Data Processing
+def closest_power_of_2(A):
+    """This is for finding a proper overlap token size when chunking"""
+    target = A // 10
+    lower_exp = int(math.log2(target))
+    upper_exp = lower_exp + 1
+    lower_power = 2 ** lower_exp
+    upper_power = 2 ** upper_exp
+    
+    if abs(target - lower_power) <= abs(target - upper_power):
+        return lower_power
+    else:
+        return upper_power
