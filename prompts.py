@@ -14,7 +14,7 @@ theme_summarization = """请总结下面这篇文章片段的主题并回答，�
 主题：
 """
 
-# TODO the ability of distillating facts properly is the core of Knowledge Injection with SFT
+
 fact_distillation = """请将以下关于{theme}的文章片段分解为单一事实，编号为1，2，3.依此类推。
 
 目标 1：单一事实应尽可能简单，如果是复合句，请再分解一次。
