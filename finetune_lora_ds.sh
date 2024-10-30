@@ -27,10 +27,12 @@ MASTER_PORT=${MASTER_PORT:-6001}
 MODEL="/data/repos/huggingface/Qwen2.5-1.5B-Instruct-GPTQ-Int8" # "/data/repos/huggingface/gpt2" 
 DATA="/data/repos/KnowledgeUpdate/datasets/sample.json"
 DS_CONFIG_PATH="ds_config_zero2.json"
+WANDB_KEY=""
 
 function usage() {
     echo '
-Usage: bash finetune/finetune_lora_ds.sh [-m MODEL_PATH] [-d DATA_PATH] [--deepspeed DS_CONFIG_PATH]
+Usage: bash finetune/finetune_lora_ds.sh 
+[-m MODEL_PATH] [-d DATA_PATH] [--deepspeed DS_CONFIG_PATH] [--wandb_key WANDB_KEY]
 '
 }
 
@@ -47,6 +49,10 @@ while [[ "$1" != "" ]]; do
         --deepspeed )
             shift
             DS_CONFIG_PATH=$1
+            ;;
+        --wandb_key )
+            shift
+            WANDB_KEY=$1
             ;;
         -h | --help )
             usage
@@ -70,6 +76,9 @@ DISTRIBUTED_ARGS="
 
 torchrun $DISTRIBUTED_ARGS finetune.py \
     --model_name_or_path $MODEL \
+    --key "e28afd6154b7ecd865dde62fead55bba5994bc9a"\
+    --use_wandb True \
+    --wandb_run_name "debug-run1" \
     --data_path $DATA \
     --bf16 True \
     --output_dir output_qwen \

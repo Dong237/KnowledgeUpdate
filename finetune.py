@@ -1,12 +1,15 @@
 # This code is based on the revised code from fastchat based on tatsu-lab/stanford_alpaca.
-
-
 from dataclasses import dataclass, field
+import netrc
+import time
 import json
 import math
 import logging
 import os
+from typing import Literal
 from typing import Dict, Optional, List
+from wandb.sdk import login
+from utils import is_wandb_logged_in
 import torch
 from torch.utils.data import Dataset
 from deepspeed import zero
@@ -23,18 +26,35 @@ IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
 @dataclass
 class ModelArguments:
-    model_name_or_path: Optional[str] = field(default="Qwen2.5-1.5B-Instruct-GPTQ-Int8")
+    model_name_or_path: Optional[str] = field(
+        default="Qwen2.5-1.5B-Instruct-GPTQ-Int8"
+        )
 
 
 @dataclass
 class DataArguments:
     data_path: str = field(
-        default=None, metadata={"help": "Path to the training data."}
+        default=None, 
+        metadata={"help": "Path to the training data."}
     )
     eval_data_path: str = field(
-        default=None, metadata={"help": "Path to the evaluation data."}
+        default=None, 
+        metadata={"help": "Path to the evaluation data."}
     )
     lazy_preprocess: bool = False
+
+
+@dataclass
+class WandbArguments:
+    use_wandb: bool = False
+    key: str = ""
+    relogin: bool = False
+    force: bool = False
+    timeout: int = None
+    wandb_project: str = "T+1"
+    wandb_run_name: str = ""
+    wandb_watch: Literal["false", "gradients", "all"] = "false "
+    wandb_log_model: Literal["false", "checkpoint", "end"] = "false"
 
 
 @dataclass
@@ -48,6 +68,8 @@ class TrainingArguments(transformers.TrainingArguments):
         },
     )
     use_lora: bool = False
+    logging_strategy: str = "steps"
+    logging_steps: int = 10
 
 
 @dataclass
@@ -265,15 +287,41 @@ def make_supervised_data_module(
 def train():
     global local_rank
 
+    # Parse arguments
     parser = transformers.HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
+        (ModelArguments, DataArguments, TrainingArguments, LoraArguments, WandbArguments)
     )
     (
         model_args,
         data_args,
         training_args,
         lora_args,
+        wandb_args,
     ) = parser.parse_args_into_dataclasses()
+
+    # Setting wandb logging
+    if wandb_args.use_wandb:
+        logging.info("Using Wandb for logging training information...")
+        if not is_wandb_logged_in():
+            logging.info("Wandb login...")
+            _ = login(
+                key = wandb_args.key,
+                relogin = wandb_args.relogin,
+                force = wandb_args.force,
+                timeout = wandb_args.timeout,
+            )
+
+        if len(wandb_args.wandb_run_name)==0:
+            wandb_args.wandb_run_name = time.strftime(
+                '%Y-%m-%d-%H:%M:%S %p %Z', 
+                time.gmtime(time.time())
+                )
+        training_args.report_to = ["wandb"]
+        training_args.run_name = wandb_args.wandb_run_name
+        
+        os.environ["WANDB_PROJECT"] = wandb_args.wandb_project
+        os.environ["WANDB_WATCH"] = wandb_args.wandb_watch
+        os.environ["WANDB_LOG_MODEL"] = wandb_args.wandb_log_model
 
     # TODO To understand this (This serves for single-gpu qlora?)
     if getattr(training_args, 'deepspeed', None) and int(os.environ.get("WORLD_SIZE", 1))==1:
@@ -281,6 +329,7 @@ def train():
 
     local_rank = training_args.local_rank
 
+    # Setting device map
     device_map = None
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     ddp = world_size != 1
@@ -291,6 +340,7 @@ def train():
                 "FSDP or ZeRO3 are incompatible with QLoRA."
             )
 
+    # Ensure that ZeRO3 and LoRA are not used at the same time
     is_chat_model = 'chat' in model_args.model_name_or_path.lower()
     if (
             training_args.use_lora
@@ -300,9 +350,9 @@ def train():
     ):
         raise RuntimeError("ZeRO3 is incompatible with LoRA when finetuning on base model.")
 
-    model_load_kwargs = {
-        'low_cpu_mem_usage': not deepspeed.is_deepspeed_zero3_enabled(),
-    }
+    # model_load_kwargs = {
+    #     'low_cpu_mem_usage': not deepspeed.is_deepspeed_zero3_enabled(),
+    # }
 
     # Set RoPE scaling factor
     config = transformers.AutoConfig.from_pretrained(
@@ -319,12 +369,13 @@ def train():
         cache_dir=training_args.cache_dir,
         device_map=device_map,
         trust_remote_code=True,
+        low_cpu_mem_usage=not deepspeed.is_deepspeed_zero3_enabled(),
         quantization_config=GPTQConfig(
             bits=4, disable_exllama=True
         )
         if training_args.use_lora and lora_args.q_lora
         else None,
-        **model_load_kwargs,
+        # **model_load_kwargs,
     )
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
@@ -338,6 +389,7 @@ def train():
     # tokenizer.pad_token_id = tokenizer.eod_id
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
+    # Setting up LoRA configuration
     if training_args.use_lora:
         # NOTE that if you use LoRA to finetune the base language model, e.g., 
         # Qwen-7B, instead of chat models, e.g., Qwen-7B-Chat, the script automatically 
@@ -366,8 +418,6 @@ def train():
             )
 
         model = get_peft_model(model, lora_config)
-
-        # Print peft trainable params
         model.print_trainable_parameters()
 
         # However, if the preferred batch size fits into memory, there’s no reason 
@@ -377,14 +427,21 @@ def train():
             # adapter weights while keeping the model weights fixed.
             model.enable_input_require_grads()  
 
-    # Load data
+    # Loading data
     data_module = make_supervised_data_module(
-        tokenizer=tokenizer, data_args=data_args, max_len=training_args.model_max_length
+        tokenizer=tokenizer, 
+        data_args=data_args, 
+        max_len=training_args.model_max_length
     )
+    
 
-    # Start trainner
+
+    # Starting the trainner
     trainer = Trainer(
-        model=model, tokenizer=tokenizer, args=training_args, **data_module
+        model=model, 
+        tokenizer=tokenizer, 
+        args=training_args, 
+        **data_module
     )
 
     trainer.train()

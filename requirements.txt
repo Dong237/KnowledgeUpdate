@@ -8,4 +8,4 @@ deepspeed
 peft<0.8.0
 auto-gptq
 optimum
-langchain_text_splitters
+wandb==0.17.8

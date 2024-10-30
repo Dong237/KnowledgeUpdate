@@ -1,6 +1,7 @@
 import requests
 import os 
 import json
+import netrc
 import io
 from tenacity import (
     retry,
@@ -122,3 +123,13 @@ def llm_chat(
     #     **result["usage"]
     # )
     return result["choices"][0]["message"]["content"]
+
+
+## Utilities for logging
+def is_wandb_logged_in():
+    netrc_path = os.path.expanduser("~/.netrc")
+    if not os.path.exists(netrc_path):
+        return False
+    
+    auth = netrc.netrc(netrc_path).authenticators("api.wandb.ai")
+    return bool(auth)
