@@ -39,13 +39,13 @@ from utils import (
     setup_logging
 )
 from prompts import (
-    system_prompt_data_gen,
-    system_prompt_role_gen,
-    theme_summarization, 
-    fact_distillation,
-    role_generation,
-    role_based_qa_diversify,
-    fact_based_qa_gen_skip,
+    SYSTEM_PROMPT_DATA_GEN,
+    SYSTEM_PROMPT_ROLE_GEN,
+    THEME_SUMMARIZATION, 
+    FACT_DISTILLATION,
+    ROLE_GENERATION,
+    ROLE_BASED_QA_DIVERSIFY,
+    FACT_BASED_QA_GEN_SKIP,
 )
 
 
@@ -199,16 +199,16 @@ def _generate_qa_pairs_from_one_txt_file(
         # extracting facts from chunked texts
         logging.info("Summarizing the theme of the chunk")
         theme_response = llm_chat(
-            user_prompt=theme_summarization.format(passage=content), 
-            system_prompt=system_prompt_data_gen
+            user_prompt=THEME_SUMMARIZATION.format(passage=content), 
+            system_prompt=SYSTEM_PROMPT_DATA_GEN
             )
         logging.info("Extracting facts from the chunk")
         facts_response = llm_chat(
-            user_prompt=fact_distillation.format(
+            user_prompt=FACT_DISTILLATION.format(
                 theme=theme_response, 
                 passage=content
                 ), 
-            system_prompt=system_prompt_data_gen
+            system_prompt=SYSTEM_PROMPT_DATA_GEN
         )
         parsed_facts = _parse_numbered_elements(facts_response)
 
@@ -216,36 +216,36 @@ def _generate_qa_pairs_from_one_txt_file(
             # generate a qa pair from the fact as example
             logging.info("Generating a standard Q&A pair based on the fact")
             qa_response = llm_chat(
-                user_prompt=fact_based_qa_gen_skip.format(
+                user_prompt=FACT_BASED_QA_GEN_SKIP.format(
                     theme=theme_response, 
                     fact=fact
                     ), 
-                system_prompt=system_prompt_data_gen
+                system_prompt=SYSTEM_PROMPT_DATA_GEN
                 )
             # only proceed when the fact is not too broad
             if qa_response!="SKIP":
                 # generate different roles
                 logging.info("Generating possible roles")
                 roles_response = llm_chat(
-                    user_prompt=role_generation.format(
+                    user_prompt=ROLE_GENERATION.format(
                         amount=role_amount_per_fact,
                         theme=theme_response
                     ),
-                    system_prompt=system_prompt_role_gen
+                    system_prompt=SYSTEM_PROMPT_ROLE_GEN
                     )
                 parsed_roles_response = _parse_numbered_elements(roles_response)
 
                 for idx, role in enumerate(parsed_roles_response): 
                     logging.info("Diversifying the standard Q&A pair given roles")   
                     diversified_qa_response = llm_chat(
-                        user_prompt=role_based_qa_diversify.format(
+                        user_prompt=ROLE_BASED_QA_DIVERSIFY.format(
                             role=role,
                             theme=theme_response,
                             amount=qa_amount_per_role_schedule[idx],
                             qa_pair=qa_response,
                             fact=fact
                             ), 
-                        system_prompt=system_prompt_data_gen
+                        system_prompt=SYSTEM_PROMPT_DATA_GEN
                     )
                     qa_pairs_per_role = _parse_diversified_qa_response(diversified_qa_response)
                     facts.extend([fact]*len(qa_pairs_per_role))
