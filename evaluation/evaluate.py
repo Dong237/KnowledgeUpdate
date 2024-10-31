@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 This script processes and evaluates model responses to determine the accuracy and comparative win rate
 between a fine-tuned model and a base model, using LLM-based prompts for scoring. The script loads
