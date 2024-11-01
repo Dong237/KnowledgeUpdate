@@ -139,13 +139,13 @@ def is_wandb_logged_in():
 
 
 def setup_logging():
-    # Define the basic format for log messages
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-    
     # Set up file handler
-    file_handler = logging.FileHandler("app.log")
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
+    file_handler = logging.FileHandler("app.log")  
+    file_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s"
+            )
+        )
 
     # Set up color console handler using colorlog
     color_handler = colorlog.StreamHandler()
@@ -162,7 +162,7 @@ def setup_logging():
 
     # Configure the root logger
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)  # Set the lowest log level to capture all messages
+    logger.setLevel(logging.INFO)  # Set the lowest log level to capture all messages
     logger.addHandler(file_handler)
     logger.addHandler(color_handler)
 
