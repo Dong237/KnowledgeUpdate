@@ -262,6 +262,7 @@ def _generate_qa_pairs_from_one_txt_file(
         except ValueError as e:
             logging.error(f"The following exception occured whiile spltting the Q&A pair")
             logging.warning(f"Q&A pair {qa} will be omitted in the final dataset due to splitting failure")
+            continue
         q = q.replace('Q: ', '')
         # TODO this json format may probably need adjustment upon delivery
         qa_pairs_json.append(
