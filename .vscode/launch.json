@@ -5,22 +5,26 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug Training Script",
+            "name": "Debug Finetuning Script",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/finetune.py",
             "args": [
                 // ModleArguments
-                "--model_name_or_path", "/data/repos/huggingface/gpt2",
+                "--model_name_or_path", "/data/repos/huggingface/gpt2", // /data/repos/huggingface/Qwen2.5-1.5B-Instruct-GPTQ-Int8
                 // DataArgumens
                 "--data_path", "/data/repos/KnowledgeUpdate/datasets/sample.json",
                 "--evaluation_strategy", "no",
-                "--lazy_preprocess", "True",
+                "--lazy_preprocess", "False",
+                // WandbArguments
+                "--key", "e28afd6154b7ecd865dde62fead55bba5994bc9a",
+                "--use_wandb", "True",
+                "--wandb_run_name", "debug-run1",
                 // TrainingArguments
                 "--cache_dir", "/data/repos/huggingface/.cache",
                 "--bf16", "True",
                 "--output_dir", "output_qwen",
-                "--num_train_epochs", "5",
+                "--num_train_epochs", "1",
                 "--per_device_train_batch_size", "2",
                 "--per_device_eval_batch_size", "1",
                 "--gradient_accumulation_steps", "8",
@@ -44,7 +48,23 @@
             "env": {
                 "CUDA_DEVICE_MAX_CONNECTIONS": "1"
             },
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "Debug Data Collection Script",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/data_collection/data_collection.py",
+            "args":  [
+                "--data_path", "/data/repos/KnowledgeUpdate/datasets/txt_data",
+                "--data_name", "邓小平与新时期不结盟的外交战略.txt",
+                "--model_name_or_path", "/data/repos/huggingface/Qwen2.5-1.5B-Instruct-GPTQ-Int8",
+                "--chunk_size_by_token", "512",
+                "--qa_amount_per_fact", "10",
+                "--role_amount_per_fact", "3",
+                "--json_save_dir", "datasets/qa_pairs_dengxiaoping.json"
+            ],
+            "console": "integratedTerminal",
         }
     ]
 }
