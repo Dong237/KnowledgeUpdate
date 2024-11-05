@@ -68,6 +68,8 @@ class TrainingArguments(transformers.TrainingArguments):
         },
     )
     use_lora: bool = False
+    per_device_train_batch_size: int = 32
+    gradient_accumulation_steps: int = 1
     logging_strategy: str = "steps"
     logging_steps: int = 10
 
@@ -333,8 +335,14 @@ def train():
     device_map = None
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     ddp = world_size != 1
+    if ddp:
+        training_args.gradient_accumulation_steps = max(
+            training_args.gradient_accumulation_steps // world_size,
+            1
+        )
     if lora_args.q_lora:
         device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else "auto"
+        logging.info(f"Device map is {device_map}")
         if len(training_args.fsdp) > 0 or deepspeed.is_deepspeed_zero3_enabled():
             logging.warning(
                 "FSDP or ZeRO3 are incompatible with QLoRA."
@@ -349,10 +357,6 @@ def train():
             and not is_chat_model
     ):
         raise RuntimeError("ZeRO3 is incompatible with LoRA when finetuning on base model.")
-
-    # model_load_kwargs = {
-    #     'low_cpu_mem_usage': not deepspeed.is_deepspeed_zero3_enabled(),
-    # }
 
     # Set RoPE scaling factor
     config = transformers.AutoConfig.from_pretrained(
@@ -371,11 +375,11 @@ def train():
         trust_remote_code=True,
         low_cpu_mem_usage=not deepspeed.is_deepspeed_zero3_enabled(),
         quantization_config=GPTQConfig(
-            bits=4, disable_exllama=True
+            bits=4, 
+            disable_exllama=True
         )
         if training_args.use_lora and lora_args.q_lora
         else None,
-        # **model_load_kwargs,
     )
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
