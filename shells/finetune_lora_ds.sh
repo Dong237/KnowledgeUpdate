@@ -1,6 +1,6 @@
 #!/bin/bash
 export CUDA_DEVICE_MAX_CONNECTIONS=1
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 DIR=`pwd`
 
 # Guide:
@@ -80,11 +80,11 @@ torchrun $DISTRIBUTED_ARGS finetune.py \
     --model_name_or_path $MODEL \
     --key "e28afd6154b7ecd865dde62fead55bba5994bc9a"\
     --use_wandb True \
-    --wandb_run_name "run-lora-5epochs" \
+    --wandb_run_name "run-lora-10epochs" \
     --data_path $DATA \
     --bf16 True \
     --output_dir output_qwen/7B_5epochs \
-    --num_train_epochs 5 \
+    --num_train_epochs 10 \
     --per_device_train_batch_size 32 \
     --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 8 \
