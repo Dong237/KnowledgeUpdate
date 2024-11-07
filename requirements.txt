@@ -9,3 +9,5 @@ peft<0.8.0
 auto-gptq
 optimum
 wandb==0.17.8
+colorlog
+tenacity
