@@ -23,25 +23,20 @@
                 // TrainingArguments
                 "--cache_dir", "/data/repos/huggingface/.cache",
                 "--bf16", "True",
-                "--output_dir", "output_qwen",
+                "--output_dir", "output_qwen/7B_debug",
                 "--num_train_epochs", "1",
                 "--per_device_train_batch_size", "2",
                 "--per_device_eval_batch_size", "1",
-                "--gradient_accumulation_steps", "8",
-                "--save_strategy", "steps",
-                "--save_steps", "1000",
-                "--save_total_limit", "10",
+                "--gradient_accumulation_steps", "4",
                 "--learning_rate", "3e-4",
                 "--weight_decay", "0.1",
                 "--adam_beta2", "0.95",
                 "--warmup_ratio", "0.01",
                 "--lr_scheduler_type", "cosine",
-                "--logging_steps", "1",
-                "--report_to", "none",
                 "--model_max_length", "512",
                 "--use_lora",
                 "--gradient_checkpointing",
-                "--deepspeed", "/data/repos/KnowledgeUpdate/ds_config_zero2.json"
+                // "--deepspeed", "/data/repos/KnowledgeUpdate/ds_config_zero2.json"
                 // LoraArguments
 
             ],
@@ -54,7 +49,7 @@
             "name": "Debug Data Collection Script",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/data_collection/data_collection.py",
+            "program": "${workspaceFolder}/data_collection.py",
             "args":  [
                 "--data_path", "/data/repos/KnowledgeUpdate/datasets/txt_data",
                 "--data_name", "邓小平与新时期不结盟的外交战略.txt",
@@ -63,6 +58,19 @@
                 "--qa_amount_per_fact", "10",
                 "--role_amount_per_fact", "3",
                 "--json_save_dir", "datasets/qa_pairs_dengxiaoping.json"
+            ],
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "Python: Debug Inference Script",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/inference.py",
+            "args": [
+                "--model_name_or_path", "/data/tangbo/plms/Qwen2.5-7B-Instruct-GPTQ-Int8",
+                "--test_data_path", "datasets/test_dataset.json",
+                "--output_path", "results/inference_results.json",
+                "--lora_weights", "/data/youxiang/repos/KnowledgeUpdate/output_qwen/7B_5epochs"
             ],
             "console": "integratedTerminal",
         }
