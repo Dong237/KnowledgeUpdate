@@ -4,6 +4,7 @@ import netrc
 import time
 import json
 import math
+import random
 import logging
 import os
 from typing import Literal
@@ -20,7 +21,8 @@ from transformers.trainer_pt_utils import LabelSmoother
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from accelerate.utils import DistributedType
 
-
+torch.cuda.empty_cache()
+random.seed(42)
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
 
@@ -37,11 +39,15 @@ class DataArguments:
         default=None, 
         metadata={"help": "Path to the training data."}
     )
-    eval_data_path: str = field(
-        default=None, 
-        metadata={"help": "Path to the evaluation data."}
+    lazy_preprocess: bool = field(
+        default=False, 
+        metadata={"help": "Whether to preprocess data upfront or not."}
     )
-    lazy_preprocess: bool = False
+    validation: bool = field(
+        default=True, 
+        metadata={"help": "Whether to split the dataset into training and validation."}
+    )
+    validation_size: int = 1000
 
 
 @dataclass
@@ -61,6 +67,9 @@ class WandbArguments:
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
+    # model_max_length determines the input data size and thereby has a
+    # great impact on the memory usage, setting it properly (not to large)
+    # will give you more space on GPUs for increasing the batch size
     model_max_length: int = field(
         default=8192,
         metadata={
@@ -72,6 +81,10 @@ class TrainingArguments(transformers.TrainingArguments):
     gradient_accumulation_steps: int = 1
     logging_strategy: str = "steps"
     logging_steps: int = 10
+    eval_strategy: str = "steps"
+    eval_steps: int = 10
+    save_strategy: str = "steps"
+    save_total_limit: int = 3
 
 
 @dataclass
@@ -277,11 +290,20 @@ def make_supervised_data_module(
     train_json = json.load(open(data_args.data_path, "r"))
     train_dataset = dataset_cls(train_json, tokenizer=tokenizer, max_len=max_len)
 
-    if data_args.eval_data_path:
-        eval_json = json.load(open(data_args.eval_data_path, "r"))
+    if data_args.validation:
+        logging.info("Using validation dataset while training")
+        eval_json = random.sample(
+            train_json, 
+            data_args.validation_size,
+            )
         eval_dataset = dataset_cls(eval_json, tokenizer=tokenizer, max_len=max_len)
     else:
         eval_dataset = None
+    # if data_args.eval_data_path:
+    #     eval_json = json.load(open(data_args.eval_data_path, "r"))
+    #     eval_dataset = dataset_cls(eval_json, tokenizer=tokenizer, max_len=max_len)
+    # else:
+    #     eval_dataset = None
 
     return dict(train_dataset=train_dataset, eval_dataset=eval_dataset)
 
@@ -335,11 +357,6 @@ def train():
     device_map = None
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     ddp = world_size != 1
-    if ddp:
-        training_args.gradient_accumulation_steps = max(
-            training_args.gradient_accumulation_steps // world_size,
-            1
-        )
     if lora_args.q_lora:
         device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else "auto"
         logging.info(f"Device map is {device_map}")
@@ -438,8 +455,6 @@ def train():
         max_len=training_args.model_max_length
     )
     
-
-
     # Starting the trainner
     trainer = Trainer(
         model=model, 

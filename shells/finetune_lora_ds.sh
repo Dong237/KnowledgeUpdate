@@ -1,5 +1,6 @@
 #!/bin/bash
 export CUDA_DEVICE_MAX_CONNECTIONS=1
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5
 DIR=`pwd`
 
 # Guide:
@@ -25,8 +26,8 @@ MASTER_PORT=${MASTER_PORT:-6001}
 
 #  # Set the path if you do not want to load from huggingface directly
 # MODEL="/data/repos/huggingface/Qwen2.5-1.5B-Instruct-GPTQ-Int8" # "/data/repos/huggingface/gpt2"
-MODEL="/data/repos/huggingface/Qwen2.5-7B-Instruct-GPTQ-Int8" 
-DATA="/data/repos/KnowledgeUpdate/datasets/sample.json"
+MODEL="/data/tangbo/plms/Qwen2.5-7B-Instruct-GPTQ-Int8" 
+DATA="/data/youxiang/repos/KnowledgeUpdate/datasets/qa_pairs_generated.json"
 DS_CONFIG_PATH="ds_config_zero2.json"
 WANDB_KEY=""
 
@@ -79,28 +80,31 @@ torchrun $DISTRIBUTED_ARGS finetune.py \
     --model_name_or_path $MODEL \
     --key "e28afd6154b7ecd865dde62fead55bba5994bc9a"\
     --use_wandb True \
-    --wandb_run_name "debug-lora_run2" \
+    --wandb_run_name "run-lora-5epochs" \
     --data_path $DATA \
     --bf16 True \
-    --output_dir output_qwen \
+    --output_dir output_qwen/7B_5epochs \
     --num_train_epochs 5 \
     --per_device_train_batch_size 32 \
     --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 8 \
-    --evaluation_strategy "no" \
+    --validation True \
+    --validation_size 1000 \
+    --logging_strategy "steps" \
+    --logging_steps 4 \
+    --eval_strategy "steps" \
+    --eval_steps 4 \
     --save_strategy "steps" \
-    --save_steps 1000 \
-    --save_total_limit 10 \
+    --save_total_limit 3 \
     --learning_rate 3e-4 \
     --weight_decay 0.1 \
     --adam_beta2 0.95 \
     --warmup_ratio 0.01 \
     --lr_scheduler_type "cosine" \
-    --logging_steps 1 \
     --report_to "none" \
     --model_max_length 512 \
     --lazy_preprocess True \
     --use_lora \
     --gradient_checkpointing \
     --deepspeed ${DS_CONFIG_PATH} \
-    --q_lora True \
+    # --q_lora True \
