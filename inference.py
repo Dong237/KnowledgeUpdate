@@ -4,7 +4,6 @@ import argparse
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils import (
-    llm_chat,
     jload, 
     jdump,
     setup_logging
@@ -56,7 +55,7 @@ def _load_model_and_tokenizer(model_name_or_path, lora_weights=None):
         device_map="cuda"
     )
     if lora_weights:
-        logging.info("Loading LoRA weights..")
+        logging.info(f"Loading LoRA weights from {lora_weights}")
         model = PeftModel.from_pretrained(model, lora_weights) 
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     return model, tokenizer
@@ -124,6 +123,7 @@ def main():
         }
         results.append(result)
     jdump(results, args.output_path)
+    logging.info(f"Inference results saved as {args.output_path}")
 
 if __name__ == "__main__":
     main()
