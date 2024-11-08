@@ -1,5 +1,6 @@
 import requests
 import os 
+import re
 import json
 import netrc
 import io
@@ -128,6 +129,40 @@ def llm_chat(
     return result["choices"][0]["message"]["content"]
 
 
+def llm_chat_local(model, tokenizer, user_prompt, system_prompt):
+        messages = [
+            {
+                "role": "system", 
+                "content": system_prompt
+                },
+            {
+                "role": "user", 
+                "content": user_prompt
+                },
+        ]
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+
+        # make sure to use greedy decoding
+        model.generation_config.temperature=None
+        model.generation_config.top_p=None
+        model.generation_config.top_k=None
+        
+        generated_ids = model.generate(
+            **model_inputs,
+            do_sample=False,
+            max_new_tokens=512,
+        )
+        generated_ids = [
+            output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+        ]
+        response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        return response
+
 ## Utilities for logging
 def is_wandb_logged_in():
     netrc_path = os.path.expanduser("~/.netrc")
@@ -180,3 +215,9 @@ def closest_power_of_2(A):
         return lower_power
     else:
         return upper_power
+    
+
+## For evaluation
+def extract_rating(text):
+    match = re.search(r'\b[01]\b', text.strip())
+    return match.group() if match else None
