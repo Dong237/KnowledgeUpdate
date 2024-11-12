@@ -306,7 +306,7 @@ def main():
     # Define the evaluation tasks with relevant parameters
     tasks = [
         (args.data_path, args.data_name_sft, args.max_attempts, args.retry_delay, local_judge),
-        # (args.data_path, args.data_name_base, args.max_attempts, args.retry_delay, local_judge),
+        (args.data_path, args.data_name_base, args.max_attempts, args.retry_delay, local_judge),
         (args.data_path, data_name_win_rate, args.max_attempts, args.retry_delay, local_judge),
     ]
     

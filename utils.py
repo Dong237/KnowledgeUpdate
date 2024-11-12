@@ -162,6 +162,35 @@ def llm_chat_local(model, tokenizer, user_prompt, system_prompt):
         ]
         response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
         return response
+    
+#调用模型接口
+from openai import OpenAI
+def ai_chat(prompt):
+    api_key = "Zhiyan123"
+    model_name = "zhiyan-v2.6-chat-int8"
+    url = f'http://192.168.200.212:8100/v1'
+    client = OpenAI(api_key=api_key, base_url=url)
+    
+    try:
+        completion = client.chat.completions.create(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,
+            temperature=0.2,
+            top_p=0.7,
+        )
+        
+        full_ans = ""
+        for chunk in completion:
+            if chunk.choices[0].delta.content is not None:
+                full_ans += chunk.choices[0].delta.content
+
+        return full_ans.strip()
+
+    except Exception as e:
+        print(f"发生错误: {e}")
+        return ""
+    
 
 ## Utilities for logging
 def is_wandb_logged_in():
