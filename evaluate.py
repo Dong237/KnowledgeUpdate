@@ -261,10 +261,9 @@ def _evaluate(
     
     jdump(eval_results, os.path.join(data_path,"eval"+suffix1+suffix2+".json"))
     logging.info(
-        f"Evaluation results saved as {
-            os.path.join(data_path,"eval"+suffix1+suffix2+".json")
-            }"
-        )
+        f"Evaluation results saved as {os.path.join(data_path, 'eval' + suffix1 + suffix2 + '.json')}"
+    )
+
 
     if verbose:
         print("="*100)
@@ -272,7 +271,7 @@ def _evaluate(
             result = (len(eval_results)-eval_results.count(0))/len(eval_results)
         else:
             result = eval_results.count(1)/len(eval_results)
-        print(f"Evaluation result for {suffix1.replace("_", "", 1)+suffix2} is {result:.4%}")
+        print(f"Evaluation result for {suffix1.replace('_', '', 1) + suffix2} is {result:.4%}")
         print("="*100)
 
 
