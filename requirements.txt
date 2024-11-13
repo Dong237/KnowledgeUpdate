@@ -11,3 +11,6 @@ optimum
 wandb==0.17.8
 colorlog
 tenacity
+openai
+jieba
+ratelimit
