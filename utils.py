@@ -5,8 +5,11 @@ import json
 import netrc
 import io
 import math
+import time
 import logging
 import colorlog
+from openai import OpenAI
+from ratelimit import limits, sleep_and_retry
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -86,47 +89,46 @@ def _make_r_io_base(f, mode: str):
 
 
 ## Getting resposne from taiyi-130B model
-# TODO adapt the retry mechanism according to the different purposes of generation
-@retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=4, max=40)
-)
-def llm_chat(
-        user_prompt, 
-        url="http://10.124.61.13:9200", #太乙模型 130b
-        system_prompt='Your are a helpful assistant',
-        temperature=0, 
-        top_p=0.95, 
-        max_tokens=5120, 
-        presence_penalty=0, 
-        frequency_penalty=1
-        ):
-    url += "/v1/chat/completions"
-    payload = {
-        "messages": [
-            {
-                'role': 'system',
-                'content': system_prompt
-            },
-            {
-                "role": "user",
-                "content": "{}".format(user_prompt)
-            }
-        ],
-        "temperature" : temperature,
-        "top_p" : top_p,
-        "max_tokens" : max_tokens,
-        "presence_penalty" : presence_penalty,
-        "frequency_penalty" : frequency_penalty,
-    }
-    headers = {"Content-Type": "application/json",}
-    response = requests.post(url, json=payload, headers=headers)
-    result = response.json() 
-    # return dict(
-    #     response=result["choices"][0]["message"]["content"],
-    #     **result["usage"]
-    # )
-    return result["choices"][0]["message"]["content"]
+# @retry(
+#     stop=stop_after_attempt(5),
+#     wait=wait_exponential(multiplier=1, min=4, max=40)
+# )
+# def llm_chat(
+#         user_prompt, 
+#         url="http://10.124.61.13:9200", #太乙模型 130b
+#         system_prompt='Your are a helpful assistant',
+#         temperature=0, 
+#         top_p=0.95, 
+#         max_tokens=5120, 
+#         presence_penalty=0, 
+#         frequency_penalty=1
+#         ):
+#     url += "/v1/chat/completions"
+#     payload = {
+#         "messages": [
+#             {
+#                 'role': 'system',
+#                 'content': system_prompt
+#             },
+#             {
+#                 "role": "user",
+#                 "content": "{}".format(user_prompt)
+#             }
+#         ],
+#         "temperature" : temperature,
+#         "top_p" : top_p,
+#         "max_tokens" : max_tokens,
+#         "presence_penalty" : presence_penalty,
+#         "frequency_penalty" : frequency_penalty,
+#     }
+#     headers = {"Content-Type": "application/json",}
+#     response = requests.post(url, json=payload, headers=headers)
+#     result = response.json() 
+#     # return dict(
+#     #     response=result["choices"][0]["message"]["content"],
+#     #     **result["usage"]
+#     # )
+#     return result["choices"][0]["message"]["content"]
 
 
 def llm_chat_local(model, tokenizer, user_prompt, system_prompt):
@@ -162,19 +164,37 @@ def llm_chat_local(model, tokenizer, user_prompt, system_prompt):
         ]
         response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
         return response
-    
-#调用模型接口
-from openai import OpenAI
-def ai_chat(prompt):
+
+# Define rate limit (e.g., 10 requests per minute)
+CALLS = 100
+PERIOD = 5  # seconds
+
+# Apply both rate limit and retry decorators
+@sleep_and_retry
+@limits(calls=CALLS, period=PERIOD)  # Ensure no more than 10 requests per minute 
+@retry(
+    stop=stop_after_attempt(15),
+    wait=wait_exponential(multiplier=1, min=4, max=40)
+)
+def llm_chat(user_prompt, system_prompt):
     api_key = "Zhiyan123"
     model_name = "zhiyan-v2.6-chat-int8"
     url = f'http://192.168.200.212:8100/v1'
     client = OpenAI(api_key=api_key, base_url=url)
-    
+    messages = [
+            {
+                "role": "system", 
+                "content": system_prompt
+                },
+            {
+                "role": "user", 
+                "content": user_prompt
+                },
+        ]
     try:
         completion = client.chat.completions.create(
             model=model_name,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages, #[{"role": "user", "content": user_prompt}],
             stream=True,
             temperature=0.2,
             top_p=0.7,
@@ -245,6 +265,25 @@ def closest_power_of_2(A):
     else:
         return upper_power
     
+    
+# Function to periodically save data
+def periodic_save(json_data_list, json_save_dir, save_interval=900):
+    """Save data every `save_interval` seconds."""
+    while True:
+        time.sleep(save_interval)
+        if json_data_list:  # Check if there's any data to save
+            jdump(json_data_list, json_save_dir)
+            logging.info(f"Saved partial data to {json_save_dir} at {time.ctime()}")
+
+
+def consumer(json_data_queue, json_data_list):
+    while True:
+        item = json_data_queue.get()
+        if item is None:  # Sentinel value to stop the consumer thread
+            break
+        json_data_list.append(item)
+        json_data_queue.task_done()
+        
 
 ## For evaluation
 def extract_rating(text):
