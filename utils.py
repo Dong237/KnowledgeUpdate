@@ -6,6 +6,7 @@ import netrc
 import io
 import math
 import time
+import torch
 import logging
 import colorlog
 from openai import OpenAI
@@ -88,49 +89,6 @@ def _make_r_io_base(f, mode: str):
     return f
 
 
-## Getting resposne from taiyi-130B model
-# @retry(
-#     stop=stop_after_attempt(5),
-#     wait=wait_exponential(multiplier=1, min=4, max=40)
-# )
-# def llm_chat(
-#         user_prompt, 
-#         url="http://10.124.61.13:9200", #太乙模型 130b
-#         system_prompt='Your are a helpful assistant',
-#         temperature=0, 
-#         top_p=0.95, 
-#         max_tokens=5120, 
-#         presence_penalty=0, 
-#         frequency_penalty=1
-#         ):
-#     url += "/v1/chat/completions"
-#     payload = {
-#         "messages": [
-#             {
-#                 'role': 'system',
-#                 'content': system_prompt
-#             },
-#             {
-#                 "role": "user",
-#                 "content": "{}".format(user_prompt)
-#             }
-#         ],
-#         "temperature" : temperature,
-#         "top_p" : top_p,
-#         "max_tokens" : max_tokens,
-#         "presence_penalty" : presence_penalty,
-#         "frequency_penalty" : frequency_penalty,
-#     }
-#     headers = {"Content-Type": "application/json",}
-#     response = requests.post(url, json=payload, headers=headers)
-#     result = response.json() 
-#     # return dict(
-#     #     response=result["choices"][0]["message"]["content"],
-#     #     **result["usage"]
-#     # )
-#     return result["choices"][0]["message"]["content"]
-
-
 def llm_chat_local(model, tokenizer, user_prompt, system_prompt):
         messages = [
             {
@@ -154,15 +112,16 @@ def llm_chat_local(model, tokenizer, user_prompt, system_prompt):
         model.generation_config.top_p=None
         model.generation_config.top_k=None
         
-        generated_ids = model.generate(
-            **model_inputs,
-            do_sample=False,
-            max_new_tokens=512,
-        )
-        generated_ids = [
-            output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
-        ]
-        response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        with torch.no_grad():
+            generated_ids = model.generate(
+                **model_inputs,
+                do_sample=False,
+                max_new_tokens=512,
+            )
+            generated_ids = [
+                output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+            ]
+            response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
         return response
 
 # Define rate limit (e.g., 10 requests per minute)
