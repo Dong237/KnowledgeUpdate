@@ -33,20 +33,11 @@ pip install -r requirements.txt
 
 ## Data Collection
 
-To generate a dataset of Q&A pairs from text files, use the `data_collection.py` script, which automates processing `.txt` files into a JSON format suited for supervised fine-tuning (SFT). This script loops through all `.txt` files in the specified directory, extracts facts, and generates Q&A pairs with diversified roles based on each fact.
+To generate a dataset of Q&A pairs from text files, use the `data_processor/data_collection_local.py` script (recommended), which automates processing `.txt` files into a JSON format suited for supervised fine-tuning (SFT) with a local LLM. This script loops through all `.txt` files in the specified directory, extracts facts, and generates Q&A pairs with diversified roles based on each fact.
+
+Besides, we provide an extra script called `data_processor/data_collection_api.py` which leverages an LLM API and achieve the same goal as above. We split the two method into two scripts for better comparison, and we suggest to use whichever is more stable in your environment. Note that '**it is highly unrecommended to use concurrent processing in both cases** since concurrent process may bring extra computing resource consumption and encounter rate limit error when calling the API.
 
 The data collection process originates from the fact-based approach in [this work](https://arxiv.org/abs/2404.00213). To run the data collection process, use the `collect_data.sh` script located in the `shells` folder. This script starts `data_collection.py` with all necessary arguments. You can customize options like the number of Q&A pairs per fact, the number of roles for diversifying each Q&A, and the chunk size for token-based processing.
-
-### Arguments
-
-The main arguments to configure data collection are:
-- `--data_path`: Directory with `.txt` files to process (default: `datasets/txt_data`).
-- `--model_name_or_path`: Model for tokenization, providing chunking support (default: `/data/hf_model`).
-- `--chunk_size_by_token`: Size (in tokens) for text chunks; smaller values yield more granular data extraction (default: 512).
-- `--qa_amount_per_fact`: Number of Q&A pairs generated per fact (default: 10).
-- `--role_amount_per_fact`: Number of roles assigned per fact to diversify Q&A pairs (default: 3).
-- `--json_save_dir`: Directory for saving the resulting JSON file (default: `datasets/qa_pairs.json`).
-- `--num_workers`: Number of threads for processing files in parallel (default: 4).
 
 ### Processing Steps
 
@@ -63,9 +54,7 @@ To start the data collection with default settings, run:
 bash shells/collect_data.sh
 ```
 
-This will generate a JSON dataset of Q&A pairs in `datasets/qa_pairs.json`, ready for fine-tuning the model.
-
-**Note that the argument `chunk_size_by_token` has a great impact on the data processing time, smaller chunk size will lead to finer granularity of fact extraction, while also slowing down the collection process. Bigger values are recommanded when you have too many text files** 
+**Note that arguments `chunk_size_by_token` and `role_amount_per_fact` have a great impact on the data processing time. Smaller chunk size will lead to finer granularity of fact extraction, while also slowing down the collection process. Bigger values are recommanded when you have too many text files. Also setting `role_amount_per_fact` too high will slow down the generation process** 
 
 ## Knowledge Updating & Finetuning
 
@@ -153,20 +142,36 @@ To test the knowledge updating performance, you need to run inference on the mod
    bash shells/inference.sh
    ```
 
-   Alternatively, you can directly execute the Python script:
-
-   ```bash
-   python inference.py \
-       --model_name_or_path <path/to/model/directory> \
-       --test_data_path datasets/test_dataset.json \
-       --output_path results/inference_results.json \
-       --lora_weights <path/to/lora/weights>   # Optional
-   ```
-
    - **`model_name_or_path`**: Path to the pre-trained model directory (e.g., `Qwen/Qwen2.5-7B-Instruct`).
    - **`test_data_path`**: JSON file containing test data with questions and facts for generating responses.
+      - test dataset should be a json containing the following elements:
+      ```json
+      {
+        "id": "identity_xxx",
+        "conversations": [
+            {
+                "from": "user",
+                "value": "问题xxx"
+            },
+            {
+                "from": "assistant",
+                "value": "答案xxx"
+            }
+        ],
+        "fact": "抽取的事实xxx",
+        "file_name": "文件名.txt"
+      },
+      ````
    - **`output_path`**: Output JSON file where inference results will be saved.
-   - **`lora_weights`** (optional): Path to the LoRA weights if using a fine-tuned model.
+      - output dataset should be a json containing the following elements:
+      ```json
+      {
+        "fact": "抽取的事实xxx",
+        "question": "问题xxx",
+        "response": "模型推理得到的回答xxx"
+      },
+      ```	
+   - **`lora_weights`** (optional): Path to the LoRA weights if testing a fine-tuned model.
 
 
 ## Evaluation

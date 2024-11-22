@@ -80,13 +80,13 @@ torchrun $DISTRIBUTED_ARGS finetune.py \
     --model_name_or_path $MODEL \
     --key "e28afd6154b7ecd865dde62fead55bba5994bc9a"\
     --use_wandb True \
-    --wandb_run_name "run-lora-10epochs" \
+    --wandb_run_name "run-lora-20epochs" \
     --data_path $DATA \
     --bf16 True \
-    --output_dir output_qwen/7B_5epochs \
-    --num_train_epochs 10 \
+    --output_dir output_qwen/7B_20epochs \
+    --num_train_epochs 20 \
     --per_device_train_batch_size 32 \
-    --per_device_eval_batch_size 1 \
+    --per_device_eval_batch_size 8 \
     --gradient_accumulation_steps 8 \
     --validation True \
     --validation_size 1000 \
@@ -107,4 +107,3 @@ torchrun $DISTRIBUTED_ARGS finetune.py \
     --use_lora \
     --gradient_checkpointing \
     --deepspeed ${DS_CONFIG_PATH} \
-    # --q_lora True \
