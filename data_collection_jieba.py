@@ -218,14 +218,14 @@ def generate_qa_pairs_from_folder(
     files = os.listdir(data_path)
     json_data_queue = Queue(maxsize=10000)  # Limit queue size to 10k items
     json_data_list = []
+    lock = threading.Lock()
     
     # Start periodic save thread
-    save_thread = threading.Thread(target=periodic_save, args=(json_data_list, json_save_dir))
-    save_thread.daemon = True  # Set as daemon so it stops when the main program exits
+    save_thread = threading.Thread(target=periodic_save, args=(json_data_list, json_save_dir, 900, lock))
     save_thread.start()
 
     # Start consumer thread to collect data
-    consumer_thread = threading.Thread(target=consumer, args=(json_data_queue, json_data_list))
+    consumer_thread = threading.Thread(target=consumer, args=(json_data_queue, json_data_list, lock))
     consumer_thread.start()
 
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -258,7 +258,8 @@ def generate_qa_pairs_from_folder(
     save_thread.join()
 
     # Save final data to JSON
-    jdump(json_data_list, json_save_dir)
+    with lock:
+        jdump(json_data_list, json_save_dir)
     logging.info(f"Saved final JSON data to {json_save_dir}")
 
 
