@@ -17,6 +17,7 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
 )
+import threading
 
 
 ## general loading and saving for txt and json files
@@ -225,24 +226,35 @@ def closest_power_of_2(A):
         return upper_power
     
     
-# Function to periodically save data
-def periodic_save(json_data_list, json_save_dir, save_interval=900):
+def periodic_save(json_data_list, json_save_dir, save_interval=300, lock=None):
     """Save data every `save_interval` seconds."""
+    if lock is None:
+        raise ValueError("A threading lock must be provided for thread-safe operations.")
+
+    # Immediate initial save
+    with lock:
+        if json_data_list:
+            jdump(json_data_list, json_save_dir)
+            logging.info(f"Saved initial data to {json_save_dir} at {time.ctime()}")
+
     while True:
         time.sleep(save_interval)
-        if json_data_list:  # Check if there's any data to save
-            jdump(json_data_list, json_save_dir)
-            logging.info(f"Saved partial data to {json_save_dir} at {time.ctime()}")
+        with lock:
+            if json_data_list:
+                jdump(json_data_list, json_save_dir)
+                logging.info(f"Saved partial data to {json_save_dir} at {time.ctime()}")
 
 
-def consumer(json_data_queue, json_data_list):
+def consumer(json_data_queue, json_data_list, lock):
+    """Consume items from the queue and append them to the data list."""
     while True:
         item = json_data_queue.get()
         if item is None:  # Sentinel value to stop the consumer thread
             break
-        json_data_list.append(item)
+        with lock:
+            json_data_list.append(item)
         json_data_queue.task_done()
-        
+
 
 ## For evaluation
 def extract_rating(text):
